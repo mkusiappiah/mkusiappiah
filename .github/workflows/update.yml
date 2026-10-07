@@ -23,7 +23,10 @@ jobs:
       - name: Build the card
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          STATS_TOKEN: ${{ secrets.STATS_TOKEN }}   # optional: a fine-grained token, with INCLUDE_PRIVATE=1, to count private repositories too
+          # Optional, to count private repositories too (as numbers only): a read-only fine-grained token in the STATS_TOKEN secret,
+          # and the repository variable INCLUDE_PRIVATE set to 1 (Settings > Secrets and variables > Actions). Without them: public data.
+          STATS_TOKEN: ${{ secrets.STATS_TOKEN }}
+          INCLUDE_PRIVATE: ${{ vars.INCLUDE_PRIVATE }}
           USER_NAME: ${{ github.repository_owner }}
         run: python profile.py
       - name: Commit it if anything changed
