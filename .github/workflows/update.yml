@@ -1,0 +1,34 @@
+# Rebuilds the profile card every day, and whenever the card's code or text changes.
+name: Update profile card
+on:
+  schedule:
+    - cron: "0 4 * * *"          # 04:00 UTC, 07:00 in Kampala
+  push:
+    branches: [main]
+    paths-ignore: ["dark_mode.svg", "light_mode.svg", "cache/**"]
+  workflow_dispatch:
+permissions:
+  contents: write                # to commit the refreshed card
+concurrency:
+  group: profile-card
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the card
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STATS_TOKEN: ${{ secrets.STATS_TOKEN }}   # optional: a fine-grained token, with INCLUDE_PRIVATE=1, to count private repositories too
+          USER_NAME: ${{ github.repository_owner }}
+        run: python profile.py
+      - name: Commit it if anything changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dark_mode.svg light_mode.svg cache/loc.json
+          git diff --cached --quiet && echo "No change" || (git commit -m "Update profile card" && git push)
