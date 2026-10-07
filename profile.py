@@ -263,6 +263,8 @@ def main():
     stats = collect() if '--sample' not in sys.argv else {'repos': 12, 'contributed': 14, 'stars': 1, 'followers': 5, 'commits': 321, 'added': 45678, 'deleted': 6789}
     for name, theme in THEMES.items():
         (ROOT / name).write_text(card(stats, theme), encoding='utf-8')
+    if '--sample' not in sys.argv:            # the terminal card (terminal/card.py) reads these numbers instead of calling the API
+        (ROOT / 'stats.json').write_text(json.dumps({**stats, 'updated': datetime.now(timezone.utc).isoformat(timespec='seconds')}) + '\n')
     print(json.dumps(stats))
 
 

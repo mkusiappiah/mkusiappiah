@@ -10,6 +10,8 @@ How it keeps a face recognisable:
   and the closest one in shape and darkness is used: edges become / \\ ( ) _ | and similar instead of a flat shade.
 - On the dark card characters are light ink, so bright areas get more ink; on the light card dark areas do.
 Lines are padded to the full width, so the card can stretch each one to the same length in any font.
+--shades also writes each cell's brightness as a letter (a darkest to x brightest, a space for the backdrop): the terminal card
+colours each character with it, which makes a small portrait much easier to recognise.
 Needs Pillow, numpy and scipy; the daily stats job does not.
 """
 import argparse
@@ -95,7 +97,11 @@ def portrait(photo, cols, rows, mode, crop=None, tolerance=110, local=0.45, head
     tone_cost = (target[:, None] - coverage[None, :]) ** 2 * shape_p.shape[1]
     shape_cost = (shape_g ** 2).sum(axis=1)[None, :] - 2 * shape_p @ shape_g.T
     best = np.argmin(tone_weight * tone_cost + shape_cost, axis=1)
-    return [''.join(CHARS[index] for index in best[row * cols:(row + 1) * cols]) for row in range(rows)]
+    lines = [''.join(CHARS[index] for index in best[row * cols:(row + 1) * cols]) for row in range(rows)]
+    cells = lambda image: image.reshape(rows, cell_h, cols, cell_w).mean(axis=(1, 3))
+    level, person_share = np.clip((cells(light) * 24).astype(int), 0, 23), cells(mask)
+    shades = [''.join(' ' if person_share[row, col] < 0.3 else chr(ord('a') + level[row, col]) for col in range(cols)) for row in range(rows)]
+    return lines, shades
 
 
 if __name__ == '__main__':
@@ -107,5 +113,9 @@ if __name__ == '__main__':
     parser.add_argument('--crop', type=int, nargs=4, metavar=('LEFT', 'TOP', 'RIGHT', 'BOTTOM'), help='crop box in pixels, before conversion')
     parser.add_argument('--tolerance', type=int, default=110, help='how far from the backdrop colour still counts as backdrop')
     parser.add_argument('--local', type=float, default=0.45, help='how much local contrast to mix in, 0 to 1')
+    parser.add_argument('--shades', type=Path, help='also write each cell\'s brightness (a to x) to this file')
     args = parser.parse_args()
-    print('\n'.join(portrait(args.photo, args.cols, args.rows, args.mode, args.crop, args.tolerance, args.local)))
+    lines, shades = portrait(args.photo, args.cols, args.rows, args.mode, args.crop, args.tolerance, args.local)
+    print('\n'.join(lines))
+    if args.shades:
+        args.shades.write_text('\n'.join(shades) + '\n')

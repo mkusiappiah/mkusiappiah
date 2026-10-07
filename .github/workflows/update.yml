@@ -5,7 +5,7 @@ on:
     - cron: "0 4 * * *"          # 04:00 UTC, 07:00 in Kampala
   push:
     branches: [main]
-    paths-ignore: ["dark_mode.svg", "light_mode.svg", "cache/**"]
+    paths-ignore: ["dark_mode.svg", "light_mode.svg", "cache/**", "stats.json"]
   workflow_dispatch:
 permissions:
   contents: write                # to commit the refreshed card
@@ -33,5 +33,5 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dark_mode.svg light_mode.svg cache/loc.json
+          git add dark_mode.svg light_mode.svg cache/loc.json stats.json
           git diff --cached --quiet && echo "No change" || (git commit -m "Update profile card" && git push)
