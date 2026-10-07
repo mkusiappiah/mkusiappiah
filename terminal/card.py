@@ -5,8 +5,10 @@
   python3 terminal/card.py --theme dark force the dark or light portrait (normally the terminal's background is asked for)
   python3 terminal/card.py --bundle     print a self-contained copy with the portrait and details built in, for servers
 
-Fits itself to the window: portrait and details side by side when there is room, a shorter list of details beside the portrait in
-a narrower window, the details alone in a narrow one, and nothing below 40 columns. The stats come from a local copy of the
+The portrait is the GitHub card's own (art/dark.txt and art/light.txt, 100 x 68 characters) when the window has room for it beside
+the details; otherwise the same picture made smaller by tools/ascii_portrait.py (terminal/art/, same photo, crop and method): the
+largest that fits the window's width and height, so the top of the head never scrolls away. A narrow window gets a shorter list of
+details beside it, a narrower one the details alone, and below 40 columns nothing. The stats come from a local copy of the
 profile repository's stats.json, refreshed in the background at most every 12 hours, so opening a terminal never waits for the
 network. Standard library only; works with any Python 3.8 or newer. Set PROFILE_CARD=off to silence it.
 """
@@ -27,24 +29,27 @@ DATA = None        # filled in by --bundle: everything the card needs, so the co
 STATS_URL = 'https://raw.githubusercontent.com/mkusiappiah/mkusiappiah/main/stats.json'
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'profile-card'
 WIDTH = 60
-COLOURS = {   # 256-colour codes, close to the GitHub card's
-    'dark': {'key': 215, 'value': 153, 'dots': 240, 'add': 71, 'del': 203, 'art': (238, 255)},
-    'light': {'key': 130, 'value': 25, 'dots': 250, 'add': 28, 'del': 160, 'art': (232, 246)},
+COLOURS = {   # 256-colour codes, close to the GitHub card's (the portrait in the card's text colour, as on GitHub)
+    'dark': {'key': 215, 'value': 153, 'dots': 240, 'add': 71, 'del': 203, 'art': 252},
+    'light': {'key': 130, 'value': 25, 'dots': 250, 'add': 28, 'del': 160, 'art': 236},
 }
 
 
 # ------------------------------------------------------------------------------------------------ what to show
 def load():
-    """Profile text, portraits and shades: from the bundle, or from the profile repository this file lives in."""
+    """Profile text and portraits (largest first): from the bundle, or from the profile repository this file lives in."""
     if DATA is not None:
         return DATA
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root))
     import profile as card_source                      # the GitHub card's own PROFILE: one place to edit both cards
     sys.path.pop(0)
-    here = Path(__file__).resolve().parent
-    art = {mode: {'lines': (here / f'art-{mode}.txt').read_text().rstrip('\n').split('\n'),
-                  'shades': (here / f'art-{mode}.shade').read_text().rstrip('\n').split('\n')} for mode in ('dark', 'light')}
+    art = {}
+    for mode in ('dark', 'light'):
+        sizes = [(root / 'art' / f'{mode}.txt').read_text()]                     # the GitHub card's own portrait first
+        sizes += [path.read_text() for path in sorted((root / 'terminal' / 'art').glob(f'{mode}-*.txt'),
+                                                       key=lambda path: -int(path.stem.split('-')[1].split('x')[0]))]
+        art[mode] = [trim(text) for text in sizes]
     profile = card_source.PROFILE
     return {'handle': profile['handle'], 'since': profile['uptime_since'].isoformat(), 'info': profile['info'],
             'contact': profile['contact'], 'art': art}
@@ -175,41 +180,39 @@ def paint(runs, theme, colour):
     return out
 
 
-def portrait_line(text, shades, theme, colour):
-    if not colour:
-        return text
-    low, high = COLOURS[theme]['art']
-    out, current = '', None
-    for char, shade in zip(text, shades.ljust(len(text))):
-        tint = None if shade == ' ' else low + (ord(shade) - ord('a')) * (high - low) // 23
-        if tint != current:
-            out += '\033[0m' if tint is None else f'\033[38;5;{tint}m'
-            current = tint
-        out += char
-    return out + '\033[0m'
+def trim(text):
+    """The portrait's lines without the blank rows above the head and below the picture."""
+    lines = text.rstrip('\n').split('\n')
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return lines
 
 
-def render(columns, theme, colour=True):
+def render(columns, rows, theme, colour=True):
     data, numbers = load(), stats()
-    art = data['art'][theme]
-    art_width = max(len(line) for line in art['lines'])
-    if columns >= art_width + 3 + WIDTH:
-        right, gap = details(data, numbers), 3
-    elif columns >= art_width + 2 + 30:
-        right, gap = short_details(data, numbers, columns - art_width - 3), 2
-    elif columns >= WIDTH:
-        return '\n'.join(paint(line, theme, colour) for line in details(data, numbers)) + '\n'
-    elif columns >= 40:
-        return '\n'.join(paint(line, theme, colour) for line in short_details(data, numbers, columns - 1)) + '\n'
+    full, room = details(data, numbers), rows - 1                     # a line is left for the prompt
+    # the largest portrait that fits beside the full details, else beside the short ones; then the details alone
+    for lines in data['art'][theme]:
+        width = max(len(line) for line in lines)
+        if len(lines) <= room and width + 3 + WIDTH <= columns:
+            right, gap = full, 3
+            break
+        if len(lines) <= room and width + 2 + 34 <= columns and width >= 44:
+            right, gap = short_details(data, numbers, columns - width - 3), 2
+            break
     else:
-        return ''
-    top = max(0, (len(art['lines']) - len(right)) // 2)         # the details sit level with the middle of the portrait
+        body = full if columns >= WIDTH else short_details(data, numbers, columns - 1) if columns >= 40 else []
+        return ''.join(paint(line, theme, colour) + '\n' for line in body)
+    top = max(0, (len(lines) - len(right)) // 2)                      # the details sit level with the middle of the portrait
+    tint = (lambda text: f'\033[38;5;{COLOURS[theme]["art"]}m{text}\033[0m') if colour else (lambda text: text)
     out = []
-    for row in range(max(len(art['lines']), top + len(right))):
-        left = portrait_line(art['lines'][row], art['shades'][row], theme, colour) if row < len(art['lines']) else ' ' * art_width
+    for row in range(max(len(lines), top + len(right))):
+        left = lines[row].ljust(width) if row < len(lines) else ' ' * width
         runs = right[row - top] if 0 <= row - top < len(right) else []
-        out.append(left + ' ' * gap + paint(runs, theme, colour))
-    return '\n'.join(line.rstrip() for line in out) + '\n'
+        out.append((tint(left) + ' ' * gap + paint(runs, theme, colour)).rstrip())
+    return '\n'.join(out) + '\n'
 
 
 def bundle():
@@ -228,7 +231,8 @@ def main(argv):
         return
     theme = next((argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == '--theme'), None) or ('dark' if background_is_dark() else 'light')
     colour = 'NO_COLOR' not in os.environ and os.environ.get('TERM') != 'dumb'
-    sys.stdout.write(render(shutil.get_terminal_size((100, 30)).columns, theme, colour))
+    size = shutil.get_terminal_size((100, 30))
+    sys.stdout.write(render(size.columns, size.lines, theme, colour))
 
 
 if __name__ == '__main__':
