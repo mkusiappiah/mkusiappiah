@@ -50,6 +50,9 @@ PROFILE = {
         ('Website', 'mkusiappiah.github.io/replayx'),
     ],
 }
+# The portrait: 100 x 68 characters in a small font (tools/ascii_portrait.py), each line stretched to ART_WIDTH pixels so it keeps its
+# shape in any monospace font. Line height / font size is 1.2, as the converter assumes.
+ART_FONT, ART_LINE, ART_WIDTH, ART_TOP = 6.25, 7.5, 365, 16
 WIDTH = 60                    # characters in every line of the right-hand column
 COLUMN = 395                  # where it starts, in pixels: the portrait (38 characters) ends before it
 LEFT = 36                     # characters of the left stat when two share a line
@@ -217,7 +220,7 @@ def card(stats, theme):
         if len(text) > WIDTH:
             raise ValueError(f'This line is {len(text)} characters, more than {WIDTH}: shorten it in PROFILE: {text!r}')
     art = (ROOT / theme['art']).read_text().rstrip('\n').split('\n')
-    height = 30 + 20 * max(len(art), len(lines)) + 10
+    height = round(max(ART_TOP + ART_LINE * len(art) + 12, 30 + 20 * (len(lines) - 1) + 20))
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="985" height="{height}" viewBox="0 0 985 {height}" font-size="16px" '
            "font-family=\"ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace\">",
            f'<title>{escape(PROFILE["handle"])}: GitHub profile card</title>',
@@ -225,8 +228,9 @@ def card(stats, theme):
            f'.key {{ fill: {theme["key"]}; }} .value {{ fill: {theme["value"]}; }} .dots {{ fill: {theme["dots"]}; }} '
            f'.add {{ fill: {theme["add"]}; }} .del {{ fill: {theme["del"]}; }}</style>',
            f'<rect width="985" height="{height}" fill="{theme["background"]}" rx="15"/>',
-           f'<text x="15" y="30" fill="{theme["text"]}" aria-hidden="true">']
-    out += [f'<tspan x="15" y="{30 + 20 * row}">{escape(text)}</tspan>' for row, text in enumerate(art)]
+           f'<text x="15" y="{ART_TOP}" fill="{theme["text"]}" font-size="{ART_FONT}px" aria-hidden="true">']
+    out += [f'<tspan x="15" y="{ART_TOP + ART_LINE * (row + 1):.2f}" textLength="{ART_WIDTH}" lengthAdjust="spacingAndGlyphs">{escape(text)}</tspan>'
+            for row, text in enumerate(art)]
     out += ['</text>', f'<text x="{COLUMN}" y="30" fill="{theme["text"]}">']
     for row, parts in enumerate(lines):
         spans = ''.join(f'<tspan class="{kind}">{escape(text)}</tspan>' if kind else escape(text) for text, kind in parts)
