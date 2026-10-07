@@ -54,7 +54,8 @@ PROFILE = {
 # shape in any monospace font. Line height / font size is 1.2, as the converter assumes.
 ART_FONT, ART_LINE, ART_WIDTH, ART_TOP = 6.25, 7.5, 365, 16
 WIDTH = 60                    # characters in every line of the right-hand column
-COLUMN = 395                  # where it starts, in pixels: the portrait (38 characters) ends before it
+COLUMN = 395                  # where it starts, in pixels: the portrait ends before it
+CHAR = (985 - COLUMN - 15) / WIDTH    # pixels per character in that column, whatever the viewer's font
 LEFT = 36                     # characters of the left stat when two share a line
 THEMES = {
     'dark_mode.svg': {'background': '#161b22', 'text': '#c9d1d9', 'key': '#ffa657', 'value': '#a5d6ff', 'dots': '#616e7f',
@@ -204,6 +205,16 @@ def heading(title):
     return [(title, None), (' ' + '─' * (WIDTH - len(title) - 1), None)]
 
 
+def placed(text, start, step, kind=None):
+    """A run of text with every character at its own x (start + i * step): the same layout in every browser and font, where
+    textLength is not honoured everywhere (WebKit ignores it on text with differently styled parts)."""
+    if not text:
+        return ''
+    xs = ' '.join(f'{start + i * step:.1f}' for i in range(len(text)))
+    style = f' class="{kind}"' if kind else ''
+    return f'<tspan x="{xs}"{style}>{escape(text)}</tspan>'
+
+
 def card(stats, theme):
     lines = [heading(PROFILE['handle'])]
     for item in PROFILE['info']:
@@ -229,13 +240,22 @@ def card(stats, theme):
            f'.add {{ fill: {theme["add"]}; }} .del {{ fill: {theme["del"]}; }}</style>',
            f'<rect width="985" height="{height}" fill="{theme["background"]}" rx="15"/>',
            f'<text x="15" y="{ART_TOP}" fill="{theme["text"]}" font-size="{ART_FONT}px" aria-hidden="true">']
-    out += [f'<tspan x="15" y="{ART_TOP + ART_LINE * (row + 1):.2f}" textLength="{ART_WIDTH}" lengthAdjust="spacingAndGlyphs">{escape(text)}</tspan>'
-            for row, text in enumerate(art)]
-    out += ['</text>', f'<text x="{COLUMN}" y="30" fill="{theme["text"]}">']
+    step = ART_WIDTH / max(len(line) for line in art)
+    for row, text in enumerate(art):
+        y = f'{ART_TOP + ART_LINE * (row + 1):.2f}'
+        out.append(placed(text, 15, step).replace('<tspan ', f'<tspan y="{y}" ', 1))
+    out.append('</text>')
+    # Every character is placed CHAR pixels after the previous one: fonts differ in width (SF Mono in Safari is wider than Menlo or
+    # Consolas), and with the browser's own spacing a line could run past the card's edge in one browser and fall short in another.
     for row, parts in enumerate(lines):
-        spans = ''.join(f'<tspan class="{kind}">{escape(text)}</tspan>' if kind else escape(text) for text, kind in parts)
-        out.append(f'<tspan x="{COLUMN}" y="{30 + 20 * row}">{spans}</tspan>')
-    out += ['</text>', '</svg>']
+        if not parts:
+            continue
+        spans, column = '', 0
+        for text, kind in parts:
+            spans += placed(text, COLUMN + column * CHAR, CHAR, kind)
+            column += len(text)
+        out.append(f'<text y="{30 + 20 * row}" fill="{theme["text"]}">{spans}</text>')
+    out.append('</svg>')
     return '\n'.join(out) + '\n'
 
 
