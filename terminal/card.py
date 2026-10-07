@@ -5,7 +5,8 @@
   python3 terminal/card.py --theme dark force the dark or light portrait (normally the terminal's background is asked for)
   python3 terminal/card.py --bundle     print a self-contained copy with the portrait and details built in, for servers
 
-The portrait is the GitHub card's own (art/dark.txt and art/light.txt, 100 x 68 characters) when the window has room for it beside
+In terminals that show pictures (iTerm2, WezTerm, VS Code with images on) it is the GitHub card itself, as the image the profile
+repository publishes daily. Elsewhere it is text: the portrait is the GitHub card's own (art/dark.txt and art/light.txt, 100 x 68 characters) when the window has room for it beside
 the details; otherwise the same picture made smaller by tools/ascii_portrait.py (terminal/art/, same photo, crop and method): the
 largest that fits the window's width and height, so the top of the head never scrolls away. A narrow window gets a shorter list of
 details beside it, a narrower one the details alone, and below 40 columns nothing. The stats come from a local copy of the
@@ -26,7 +27,8 @@ from datetime import date
 from pathlib import Path
 
 DATA = None        # filled in by --bundle: everything the card needs, so the copy runs on its own
-STATS_URL = 'https://raw.githubusercontent.com/mkusiappiah/mkusiappiah/main/stats.json'
+FILES = 'https://raw.githubusercontent.com/mkusiappiah/mkusiappiah/main/'
+DOWNLOADS = ('stats.json', 'dark_mode.png', 'light_mode.png')       # the GitHub card's numbers, and the card itself as images
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'profile-card'
 WIDTH = 60
 COLOURS = {   # 256-colour codes, close to the GitHub card's (the portrait in the card's text colour, as on GitHub)
@@ -55,20 +57,28 @@ def load():
             'contact': profile['contact'], 'art': art}
 
 
+def refresh():
+    """Fetch the GitHub card's numbers and images in the background when they are older than 12 hours (or missing): a terminal
+    never waits for the network, and the next one shows what was fetched."""
+    stamp = CACHE / 'stats.json'
+    fresh = stamp.exists() and time.time() - stamp.stat().st_mtime < 12 * 3600
+    lock = CACHE / '.fetching'
+    if fresh or (lock.exists() and time.time() - lock.stat().st_mtime < 120) or not shutil.which('curl'):
+        return
+    CACHE.mkdir(parents=True, exist_ok=True)
+    steps = [f'touch "{lock}"'] + [f'curl -fsS -m 20 -o "{CACHE / name}.part" "{FILES}{name}" && mv "{CACHE / name}.part" "{CACHE / name}"'
+                                   for name in DOWNLOADS] + [f'rm -f "{lock}" "{CACHE}"/*.part']
+    subprocess.Popen(['/bin/sh', '-c', '; '.join(steps)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
 def stats():
-    """The cached stats, refreshed in the background when older than 12 hours (or missing)."""
-    path = CACHE / 'stats.json'
+    """The cached numbers of the GitHub card (refresh() keeps them current)."""
+    refresh()
     try:
-        found = json.loads(path.read_text())
-        fresh = time.time() - path.stat().st_mtime < 12 * 3600
+        return json.loads((CACHE / 'stats.json').read_text())
     except (OSError, ValueError):
-        found, fresh = None, False
-    pending = CACHE / 'stats.json.part'
-    if not fresh and not (pending.exists() and time.time() - pending.stat().st_mtime < 120) and shutil.which('curl'):
-        CACHE.mkdir(parents=True, exist_ok=True)
-        subprocess.Popen(['/bin/sh', '-c', f'curl -fsS -m 10 -o "{pending}" "{STATS_URL}" && mv "{pending}" "{path}" || rm -f "{pending}"'],
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    return found
+        return None
 
 
 def uptime(since):
@@ -215,6 +225,42 @@ def render(columns, rows, theme, colour=True):
     return '\n'.join(out) + '\n'
 
 
+def shows_images():
+    """Terminals that show pictures inline (the iTerm2 image protocol): iTerm2, WezTerm, and VS Code once its
+    terminal.integrated.enableImages setting is on. PROFILE_CARD_IMAGES=on or off decides instead."""
+    choice = os.environ.get('PROFILE_CARD_IMAGES', '').lower()
+    if choice in ('on', '1', 'off', '0'):
+        return choice in ('on', '1')
+    program = os.environ.get('TERM_PROGRAM', '')
+    if program in ('iTerm.app', 'WezTerm'):
+        return True
+    if program == 'vscode':
+        settings = Path.home() / 'Library' / 'Application Support' / 'Code' / 'User' / 'settings.json'
+        try:
+            return re.search(r'^[^/\n]*"terminal\.integrated\.enableImages"\s*:\s*true', settings.read_text(), re.M) is not None
+        except OSError:
+            return False
+    return False
+
+
+def picture(columns, rows, theme):
+    """The GitHub card itself, as an inline image as wide as fits (terminal cells are about twice as tall as wide), or None."""
+    path = CACHE / f'{theme}_mode.png'
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if data[:8] != b'\x89PNG\r\n\x1a\n':
+        return None
+    width, height = int.from_bytes(data[16:20], 'big'), int.from_bytes(data[20:24], 'big')
+    cells = min(columns - 1, 150, int((rows - 2) * 2.0 * width / max(1, height)))      # its height, in rows, fits the window
+    if cells < 40:
+        return None
+    import base64
+    name = base64.b64encode(b'profile-card.png').decode()
+    return f'\033]1337;File=name={name};size={len(data)};inline=1;width={cells};preserveAspectRatio=1:{base64.b64encode(data).decode()}\a\n'
+
+
 def bundle():
     data = load()
     source = Path(__file__).read_text()
@@ -232,7 +278,12 @@ def main(argv):
     theme = next((argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == '--theme'), None) or ('dark' if background_is_dark() else 'light')
     colour = 'NO_COLOR' not in os.environ and os.environ.get('TERM') != 'dumb'
     size = shutil.get_terminal_size((100, 30))
-    sys.stdout.write(render(size.columns, size.lines, theme, colour))
+    image = picture(size.columns, size.lines, theme) if colour and shows_images() else None
+    if image:
+        refresh()
+        sys.stdout.write(image)
+    else:
+        sys.stdout.write(render(size.columns, size.lines, theme, colour))
 
 
 if __name__ == '__main__':
