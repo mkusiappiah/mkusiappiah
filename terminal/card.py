@@ -128,7 +128,7 @@ def short_details(data, numbers, width):
 
 # ------------------------------------------------------------------------------------------------ drawing
 def background_is_dark():
-    """Ask the terminal for its background colour (OSC 11); without an answer, follow macOS's appearance; else assume dark."""
+    """Ask the terminal for its background colour (OSC 11); PROFILE_CARD_THEME=dark or light overrides it."""
     choice = os.environ.get('PROFILE_CARD_THEME', '').lower()
     if choice in ('dark', 'light'):
         return choice == 'dark'
@@ -157,7 +157,8 @@ def background_is_dark():
             return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5
     except (OSError, ImportError, ValueError):
         pass
-    if sys.platform == 'darwin':
+    # No answer: Apple's Terminal follows the macOS appearance; most other terminals (iTerm2, VS Code, Termius) default to dark.
+    if sys.platform == 'darwin' and os.environ.get('TERM_PROGRAM') == 'Apple_Terminal':
         try:
             return subprocess.run(['defaults', 'read', '-g', 'AppleInterfaceStyle'], capture_output=True, text=True, timeout=1).stdout.strip() == 'Dark'
         except (OSError, subprocess.SubprocessError):
