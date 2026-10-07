@@ -33,7 +33,7 @@ PROFILE = {
     'info': [
         ('OS', 'macOS, Linux, Windows'),
         ('Uptime', '{uptime}'),
-        ('Host', 'Global Voice Group (GVG)'),
+        ('Host', 'Independent'),
         ('Kernel', 'Machine learning & fraud analytics'),
         ('IDE', 'VS Code, Jupyter, RStudio'),
         None,
@@ -45,6 +45,7 @@ PROFILE = {
         ('Hobbies.Hardware', 'Homelab: Proxmox, Kubernetes'),
     ],
     'contact': [
+        ('Email', 'appiah.michael@yahoo.com'),
         ('GitHub', 'mkusiappiah'),
         ('Website', 'mkusiappiah.github.io/replayx'),
     ],
