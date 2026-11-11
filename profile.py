@@ -45,7 +45,7 @@ PROFILE = {
         ('Languages.Real', 'English'),
         None,
         ('Hobbies.AI', 'Machine learning, deep learning'),
-        ('Hobbies.Software', 'Reinforcement learning, LLMs'),
+        ('Hobbies.AI', 'Reinforcement learning, LLMs'),
         ('Hobbies.Hardware', 'Homelab: Proxmox, Kubernetes'),
     ],
     'contact': [
